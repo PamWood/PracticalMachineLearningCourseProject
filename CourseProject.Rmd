@@ -1,0 +1,96 @@
+---
+title: 'Practical Machine Learning: Course Project'
+author: "Pamela Wood-Pate"
+date: "Friday, July 24, 2015"
+output: html_document
+---
+
+#Introduction:  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+#Purpose:  
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#Data Sets:  
+When bringing in the given data sets, we replace the character values of NA, NaN, #DIV/0!, or blanks with NAs, so that we can handle them as one type of value in the data set later.
+```{r,echo=FALSE}
+##Librarys
+suppressWarnings(suppressMessages(library(ggplot2)))
+suppressWarnings(suppressMessages(library(lattice)))
+suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(plyr)))
+suppressWarnings(suppressMessages(library(randomForest)))
+
+File<-"~/Training/DataScienceClass/PracticalMachineLearning/CourseProject"
+setwd(File)
+```
+
+```{r}
+##Replace NULL values with NA strings
+train<-read.csv("training.csv",na.strings=c("NA","NaN","#DIV/0!", "")) ##training set
+test<-read.csv("testing.csv",na.strings=c("NA","NaN","#DIV/0!", "")) ##testing set
+```
+
+###Preprocessing the Data Sets:  
+#####Step 1:  
+Before I can preprocess, there are several columns (the first 7) that do not have any impact on the classification and can therefore be removed. These columns include Row ID, Username, and Time Series, which do not act as predictors the classe based on the workout outputs.
+```{r}
+train<-train[,8:ncol(train)]
+test<-test[,8:ncol(test)]
+```
+
+#####Step 2:  
+When trying to preprocess, I found that there were columns with zero or close to zero variance.  These columns will have no impact on the prediction; therefore, can be removed. 
+```{r}
+require(caret)
+nzv<-nearZeroVar(train)
+train<-train[, -nzv]
+test<-test[, -nzv]
+```
+
+#####Step 3:  
+It does not make sense to impute the missing values for columns that have over 60% missing values because replacing those missing values with single imputation will result in lack of variance. Also, with replacing the the missing values with multiple imputation could actually cause more noise in the data that otherwise would not exist. Since the missing values appear to be random, this should not introduce too much bias into the analysis.
+
+```{r}
+Rem60<-colSums(is.na(train)) <= 0.6*nrow(train)
+TrainFinal<-train[, Rem60] 
+TestFinal<-test[, Rem60] 
+TrainFinal$classe<-as.factor(TrainFinal$classe)
+```
+
+###Split Training set into training/test sets:  
+Now that we have a clean and preprocessed data set to work with, we will split the training data set into a training and test subset. We will use the original test set as a validation set.
+```{r}
+set.seed(1306)
+inTrain<-createDataPartition(y=TrainFinal$classe,p=.6,list=FALSE)
+subtrain<-TrainFinal[inTrain,]
+subtest<-TrainFinal[-inTrain,]
+```
+
+#Prediction Model and Out of Sample Error:
+I ran through two models, a classification tree and a random forest.  The classification tree produced 56% accuracy on the subtest set, while the random forest produced 99% accuracy on the subtest set after running through a 1000 trees with 3 predictors each time. So, the model I used for this project is the Random Forest, which is the model shown below. Based on the confusion matrix there wer 8 points classified incorrectly out of the 7846 points that were classified. The error rates are given below:
+```{r,cache=TRUE}
+require(caret)
+fit2<-train(classe~.,method="rf",data=subtrain,ntree=1000, tuneGrid = data.frame(.mtry = 3))
+fit2$finalModel
+
+##subtest set
+pred2<-predict(fit2,newdata=subtest)
+confusionMatrix(pred2,subtest$classe)
+```
+
+#Testing Prediction on Original Test Data:
+When I ran the random forest model on the Original Test Data, all 20 of the classes were identified correctly.
+```{r}
+answers = predict(fit2,newdata=TestFinal)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
